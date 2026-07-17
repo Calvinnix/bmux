@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #16161e;
+    --panel: #1a1c28;
+    --fg: #c0caf5;
+    --dim: #565f89;
+    --faint: #3b4261;
+    --accent: #7aa2f7;
+    --border: #262a40;
+    --input-bg: #1d2030;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: rgba(10, 10, 15, 0.45);
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 12.5px;
+    overflow: hidden;
+    -webkit-user-select: none;
+  }
+  #panel {
+    width: min(680px, 92vw);
+    max-height: 84vh;
+    margin: 7vh auto 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    color: var(--fg);
+    padding: 20px 24px 26px;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+  #panel::-webkit-scrollbar { width: 3px; }
+  #panel::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 2px; }
+  h1 { font-size: 14px; font-weight: 600; margin-bottom: 16px; }
+  #saved {
+    color: var(--faint);
+    font-size: 11px;
+    font-weight: 400;
+    margin-left: 10px;
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+  #saved.on { opacity: 1; }
+  #esc-hint { float: right; color: var(--faint); font-size: 11px; font-weight: 400; }
+  section {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 4px 16px;
+    margin-bottom: 14px;
+  }
+  .row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 0;
+    border-bottom: 1px solid var(--border);
+    min-width: 0;
+  }
+  .row:last-child { border-bottom: none; }
+  .row label.name { width: 128px; color: var(--dim); flex-shrink: 0; }
+  input[type="text"] {
+    flex: 1;
+    min-width: 140px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font: inherit;
+    padding: 5px 9px;
+    outline: none;
+  }
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="number"] {
+    width: 64px;
+    flex-shrink: 0;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font: inherit;
+    padding: 5px 7px;
+    outline: none;
+  }
+  input[type="number"]:focus { border-color: var(--accent); }
+  select {
+    min-width: 110px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font: inherit;
+    padding: 5px 7px;
+    outline: none;
+  }
+  textarea {
+    flex: 1;
+    min-width: 140px;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font: inherit;
+    font-size: 11.5px;
+    padding: 6px 9px;
+    outline: none;
+    resize: vertical;
+    min-height: 52px;
+  }
+  .seg { display: flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; flex-shrink: 0; }
+  .seg button {
+    background: transparent;
+    border: none;
+    color: var(--dim);
+    font: inherit;
+    padding: 5px 14px;
+    cursor: pointer;
+  }
+  .seg button.on { background: var(--accent); color: var(--bg); }
+  input[type="checkbox"] { accent-color: var(--accent); width: 14px; height: 14px; flex-shrink: 0; }
+  .combo {
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--fg);
+    font: inherit;
+    padding: 5px 12px;
+    cursor: pointer;
+    min-width: 76px;
+    text-align: center;
+    flex-shrink: 0;
+    white-space: nowrap;
+  }
+  .combo.recording { border-color: var(--accent); color: var(--accent); }
+  .hint {
+    color: var(--faint);
+    font-size: 11px;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  #bindings { display: flex; flex-direction: column; gap: 8px; flex: 1 1 240px; min-width: 0; }
+  .binding { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+  .binding select { flex: 1; min-width: 120px; }
+  .binding .tail { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+  .binding .del {
+    background: none;
+    border: none;
+    color: var(--faint);
+    font: inherit;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+  .binding .del:hover { color: var(--fg); }
+  .binding .pfx { display: flex; align-items: center; gap: 4px; color: var(--dim); font-size: 11px; flex-shrink: 0; }
+  #add-binding {
+    background: none;
+    border: 1px dashed var(--faint);
+    border-radius: 6px;
+    color: var(--dim);
+    font: inherit;
+    padding: 6px;
+    cursor: pointer;
+  }
+  #add-binding:hover { color: var(--fg); border-color: var(--dim); }
+</style>
+</head>
+<body>
+  <div id="panel">
+  <h1>Settings <span id="saved">saved</span><span id="esc-hint">esc to close</span></h1>
+
+  <section>
+    <div class="row">
+      <label class="name">Homepage</label>
+      <input type="text" id="homepage">
+    </div>
+    <div class="row">
+      <label class="name">Search engine</label>
+      <select id="search-preset">
+        <option value="https://duckduckgo.com/?q=%s">DuckDuckGo</option>
+        <option value="https://www.google.com/search?q=%s">Google</option>
+        <option value="https://search.brave.com/search?q=%s">Brave</option>
+        <option value="https://kagi.com/search?q=%s">Kagi</option>
+        <option value="custom">Custom…</option>
+      </select>
+      <input type="text" id="search-url" placeholder="https://…?q=%s">
+    </div>
+    <div class="row">
+      <label class="name">Appearance</label>
+      <div class="seg" id="appearance">
+        <button data-v="system">system</button>
+        <button data-v="light">light</button>
+        <button data-v="dark">dark</button>
+      </div>
+      <span class="hint">what pages render in</span>
+    </div>
+    <div class="row">
+      <label class="name">Top bar</label>
+      <input type="number" id="bar-font" min="9" max="24" step="0.5">
+      <span class="hint">text px</span>
+      <input type="number" id="bar-height" min="24" max="80" step="1">
+      <span class="hint">bar height px (⌘± after C-b t)</span>
+    </div>
+    <div class="row">
+      <label class="name">which-key</label>
+      <input type="checkbox" id="whichkey">
+      <span class="hint">show the key cheatsheet after the prefix key</span>
+    </div>
+  </section>
+
+  <section>
+    <div class="row">
+      <label class="name">Block trackers</label>
+      <input type="checkbox" id="block">
+      <span class="hint" id="blocked-count"></span>
+    </div>
+    <div class="row">
+      <label class="name">Extra blocked domains</label>
+      <textarea id="block-extra" placeholder="one domain per line" spellcheck="false"></textarea>
+    </div>
+  </section>
+
+  <section>
+    <div class="row">
+      <label class="name">Prefix key</label>
+      <button class="combo" id="prefix-combo"></button>
+      <span class="hint">click, then press the new prefix (needs ⌃ or ⌥)</span>
+    </div>
+    <div class="row">
+      <label class="name">Custom bindings</label>
+      <div id="bindings"></div>
+    </div>
+  </section>
+  </div>
+
+<script>
+  let cfg = null
+  let commands = []
+  let saveTimer = null
+
+  const $ = (id) => document.getElementById(id)
+
+  const applyTheme = (t) => {
+    for (const [k, v] of Object.entries(t || {})) document.documentElement.style.setProperty('--' + k, v)
+  }
+  window.bmux.invoke('theme:get').then(applyTheme)
+  window.bmux.on('theme:update', applyTheme)
+
+  function comboLabel(b) {
+    let s = ''
+    if (b.control) s += '⌃'
+    if (b.alt) s += '⌥'
+    if (b.shift) s += '⇧'
+    if (b.meta) s += '⌘'
+    return s + (b.key || '?').toUpperCase()
+  }
+
+  function save() {
+    clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => {
+      window.bmux.send('prefs:save', {
+        homepage: cfg.homepage,
+        searchUrl: cfg.searchUrl,
+        appearance: cfg.appearance,
+        blockTrackers: cfg.blockTrackers,
+        blockExtra: cfg.blockExtra,
+        prefix: cfg.prefix,
+        keybindings: cfg.keybindings,
+        topBarHeight: cfg.topBarHeight,
+        topBarFontSize: cfg.topBarFontSize,
+        whichKey: cfg.whichKey,
+      })
+      $('saved').classList.add('on')
+      setTimeout(() => $('saved').classList.remove('on'), 1200)
+    }, 250)
+  }
+
+  function record(el, requireMod, done) {
+    el.classList.add('recording')
+    el.textContent = 'press keys…'
+    const handler = (e) => {
+      e.preventDefault()
+      e.stopPropagation()
+      if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return
+      if (e.key === 'Escape') { cleanup(); render(); return }
+      let key = e.key.toLowerCase()
+      if (e.code.startsWith('Key')) key = e.code.slice(3).toLowerCase()
+      if (e.code.startsWith('Digit')) key = e.code.slice(5)
+      const combo = { key, control: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey }
+      if (requireMod && !combo.control && !combo.alt && !combo.meta) return
+      cleanup()
+      done(combo)
+    }
+    const cleanup = () => {
+      document.removeEventListener('keydown', handler, true)
+      el.classList.remove('recording')
+    }
+    document.addEventListener('keydown', handler, true)
+  }
+
+  function renderBindings() {
+    const box = $('bindings')
+    box.innerHTML = ''
+    cfg.keybindings.forEach((b, i) => {
+      const row = document.createElement('div')
+      row.className = 'binding'
+      const combo = document.createElement('button')
+      combo.className = 'combo'
+      combo.textContent = comboLabel(b)
+      combo.addEventListener('click', () => record(combo, !b.prefix, (c) => {
+        Object.assign(b, c)
+        render(); save()
+      }))
+      const sel = document.createElement('select')
+      for (const c of commands) {
+        const o = document.createElement('option')
+        o.value = c.id
+        o.textContent = c.title
+        sel.appendChild(o)
+      }
+      sel.value = b.command
+      sel.addEventListener('change', () => { b.command = sel.value; save() })
+      const pfx = document.createElement('label')
+      pfx.className = 'pfx'
+      const pc = document.createElement('input')
+      pc.type = 'checkbox'
+      pc.checked = !!b.prefix
+      pc.addEventListener('change', () => { b.prefix = pc.checked; save() })
+      pfx.append(pc, 'prefix')
+      const del = document.createElement('button')
+      del.className = 'del'
+      del.textContent = '×'
+      del.addEventListener('click', () => {
+        cfg.keybindings.splice(i, 1)
+        render(); save()
+      })
+      const tail = document.createElement('span')
+      tail.className = 'tail'
+      tail.append(pfx, del)
+      row.append(combo, sel, tail)
+      box.appendChild(row)
+    })
+    const add = document.createElement('button')
+    add.id = 'add-binding'
+    add.textContent = '+ add binding'
+    add.addEventListener('click', () => record(add, true, (c) => {
+      cfg.keybindings.push({ ...c, command: 'tab-next' })
+      render(); save()
+    }))
+    box.appendChild(add)
+  }
+
+  function render() {
+    $('homepage').value = cfg.homepage
+    $('search-url').value = cfg.searchUrl
+    const preset = [...$('search-preset').options].find((o) => o.value === cfg.searchUrl)
+    $('search-preset').value = preset ? cfg.searchUrl : 'custom'
+    for (const btn of $('appearance').children) {
+      btn.className = btn.dataset.v === cfg.appearance ? 'on' : ''
+    }
+    $('block').checked = cfg.blockTrackers !== false
+    $('block-extra').value = (cfg.blockExtra || []).join('\n')
+    $('bar-height').value = cfg.topBarHeight || 36
+    $('bar-font').value = cfg.topBarFontSize || 11.5
+    $('whichkey').checked = cfg.whichKey !== false
+    $('prefix-combo').textContent = comboLabel(cfg.prefix)
+    renderBindings()
+  }
+
+  function close() {
+    window.bmux.send('prefs:close', {})
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); close(); return }
+    if (e.metaKey && (e.key.toLowerCase() === 'w' || e.key === ',')) { e.preventDefault(); close() }
+  })
+
+  document.body.addEventListener('mousedown', (e) => {
+    if (e.target === document.body) close()
+  })
+
+  window.bmux.invoke('prefs:load').then((data) => {
+    cfg = data.config
+    cfg.keybindings = cfg.keybindings || []
+    commands = data.commands
+    if (data.blocked > 0) $('blocked-count').textContent = `${data.blocked} blocked this session`
+    render()
+
+    $('homepage').addEventListener('input', () => { cfg.homepage = $('homepage').value.trim() || 'bmux://start'; save() })
+    $('search-preset').addEventListener('change', () => {
+      if ($('search-preset').value !== 'custom') {
+        cfg.searchUrl = $('search-preset').value
+        $('search-url').value = cfg.searchUrl
+        save()
+      }
+    })
+    $('search-url').addEventListener('input', () => {
+      cfg.searchUrl = $('search-url').value.trim()
+      const preset = [...$('search-preset').options].find((o) => o.value === cfg.searchUrl)
+      $('search-preset').value = preset ? cfg.searchUrl : 'custom'
+      save()
+    })
+    $('appearance').addEventListener('click', (e) => {
+      if (!e.target.dataset.v) return
+      cfg.appearance = e.target.dataset.v
+      render(); save()
+    })
+    $('block').addEventListener('change', () => { cfg.blockTrackers = $('block').checked; save() })
+    $('bar-height').addEventListener('input', () => { cfg.topBarHeight = Number($('bar-height').value) || 36; save() })
+    $('bar-font').addEventListener('input', () => { cfg.topBarFontSize = Number($('bar-font').value) || 11.5; save() })
+    $('whichkey').addEventListener('change', () => { cfg.whichKey = $('whichkey').checked; save() })
+    $('block-extra').addEventListener('input', () => {
+      cfg.blockExtra = $('block-extra').value.split('\n').map((s) => s.trim()).filter(Boolean)
+      save()
+    })
+    $('prefix-combo').addEventListener('click', () => record($('prefix-combo'), true, (c) => {
+      cfg.prefix = { key: c.key, control: c.control, alt: c.alt, shift: c.shift }
+      render(); save()
+    }))
+  })
+</script>
+</body>
+</html>

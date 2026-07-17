@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #16161e;
+    --fg: #c0caf5;
+    --dim: #565f89;
+    --faint: #3b4261;
+    --accent: #7aa2f7;
+    --match: #e0af68;
+    --sel-bg: #1e2233;
+    --border: #262a40;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: rgba(10, 10, 15, 0.45);
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 13px;
+    overflow: hidden;
+  }
+  body.glass { background: transparent; }
+  body.glass.axis-row { cursor: col-resize; }
+  body.glass.axis-col { cursor: row-resize; }
+  body.glass #panel { display: none; }
+  body.panes { background: transparent; }
+  body.panes #panel { display: none; }
+  .pane-num {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+  .pane-num .badge {
+    min-width: 84px;
+    text-align: center;
+    font-size: 44px;
+    font-weight: 700;
+    color: var(--fg);
+    background: rgba(22, 22, 30, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px 22px;
+  }
+  .pane-num.active .badge { color: var(--accent); border-color: var(--accent); }
+  #panel {
+    width: min(760px, 88vw);
+    margin: 10vh auto 0;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+    display: flex;
+    flex-direction: column;
+    max-height: 68vh;
+    overflow: hidden;
+  }
+  #promptline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  #mode-label { color: var(--accent); font-weight: 600; }
+  #query {
+    flex: 1;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: var(--fg);
+    font: inherit;
+    font-size: 14px;
+    caret-color: var(--accent);
+  }
+  #count { color: var(--faint); font-size: 11px; }
+  #results { overflow-y: auto; flex: 1; padding: 6px 0; }
+  #results::-webkit-scrollbar { width: 3px; }
+  #results::-webkit-scrollbar-thumb { background: var(--faint); border-radius: 2px; }
+  .row {
+    padding: 5px 18px;
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    white-space: nowrap;
+    overflow: hidden;
+    color: var(--fg);
+    box-shadow: inset 2px 0 0 transparent;
+  }
+  .row.selected {
+    background: var(--sel-bg);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  .row .tag {
+    color: var(--dim);
+    flex-shrink: 0;
+    min-width: 90px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row.selected .tag { color: var(--accent); }
+  .row .main { overflow: hidden; text-overflow: ellipsis; }
+  .row .sub {
+    color: var(--dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-shrink: 2;
+  }
+  .row .lineno { color: var(--faint); flex-shrink: 0; }
+  .row .fav { width: 14px; height: 14px; object-fit: contain; flex-shrink: 0; align-self: center; margin-right: -6px; }
+  .row b { color: var(--match); font-weight: 700; }
+  #footer {
+    border-top: 1px solid var(--border);
+    color: var(--faint);
+    padding: 8px 18px;
+    font-size: 10.5px;
+    letter-spacing: 0.2px;
+  }
+  .keycap {
+    color: var(--dim);
+    background: #1d2030;
+    border-radius: 4px;
+    padding: 1px 5px;
+  }
+</style>
+</head>
+<body>
+  <div id="panes"></div>
+  <div id="panel">
+    <div id="promptline">
+      <span id="mode-label"></span>
+      <input id="query" spellcheck="false" autocomplete="off">
+      <span id="count"></span>
+    </div>
+    <div id="results"></div>
+    <div id="footer"></div>
+  </div>
+<script>
+  const applyTheme = (t) => {
+    for (const [k, v] of Object.entries(t || {})) document.documentElement.style.setProperty('--' + k, v)
+  }
+  window.bmux.invoke('theme:get').then(applyTheme)
+  window.bmux.on('theme:update', applyTheme)
+
+  const queryEl = document.getElementById('query')
+  const resultsEl = document.getElementById('results')
+  const modeEl = document.getElementById('mode-label')
+  const countEl = document.getElementById('count')
+  const footerEl = document.getElementById('footer')
+  const panesEl = document.getElementById('panes')
+
+  let state = { mode: null, items: [], filtered: [], selected: 0, newTab: false, tag: null, loading: false, userMoved: false }
+
+  const MODE_LABELS = {
+    tabs: 'Tabs ❯',
+    grep: 'Grep ❯',
+    history: 'History ❯',
+    open: 'Open ❯',
+    find: 'Find ❯',
+    input: '❯',
+    help: 'Keys ❯',
+    bookmarks: 'Bookmarks ❯',
+    import: 'Import ❯',
+    commands: 'Commands ❯',
+    sessions: 'Sessions ❯',
+    tree: 'Windows ❯',
+    downloads: 'Downloads ❯',
+    join: 'Join pane into ❯',
+  }
+  const FOOTERS = {
+    tabs: '<span class="keycap">↵</span> jump · <span class="keycap">C-j/k</span> move · <span class="keycap">esc</span> close',
+    grep: '<span class="keycap">↵</span> jump &amp; highlight · <span class="keycap">C-j/k</span> move · <span class="keycap">esc</span> close',
+    history: '<span class="keycap">↵</span> open here · <span class="keycap">⌘↵</span> new tab · <span class="keycap">esc</span> close',
+    open: '<span class="keycap">↵</span> go · <span class="keycap">⌘↵</span> new tab · <span class="keycap">C-j/k</span> suggestions · <span class="keycap">esc</span> close',
+    find: '<span class="keycap">↵</span> next · <span class="keycap">S-↵</span> previous · <span class="keycap">esc</span> close',
+    input: '<span class="keycap">↵</span> confirm · <span class="keycap">esc</span> cancel',
+    help: '<span class="keycap">esc</span> close',
+    bookmarks: '<span class="keycap">↵</span> open · <span class="keycap">⌘↵</span> new tab · <span class="keycap">C-x</span> delete · <span class="keycap">C-i</span> import · <span class="keycap">esc</span> close',
+    import: '<span class="keycap">↵</span> import source · <span class="keycap">esc</span> close',
+    commands: '<span class="keycap">↵</span> run · <span class="keycap">esc</span> close',
+    sessions: '<span class="keycap">↵</span> switch — or type a new name to create · <span class="keycap">C-x</span> delete · <span class="keycap">esc</span> close',
+    tree: '<span class="keycap">↵</span> jump · <span class="keycap">esc</span> close',
+    downloads: '<span class="keycap">↵</span> open file · <span class="keycap">⌘↵</span> reveal in Finder · <span class="keycap">esc</span> close',
+    join: '<span class="keycap">↵</span> join pane into tab · <span class="keycap">esc</span> close',
+  }
+
+  function favImg(u) {
+    return u ? `<img class="fav" src="${escapeHtml(u)}" onerror="this.remove()">` : ''
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))
+  }
+
+  function fuzzyScore(query, text) {
+    const q = query.toLowerCase()
+    const t = text.toLowerCase()
+    if (!q) return { score: 1, positions: [] }
+    let score = t.includes(q) ? 40 : 0, ti = 0, streak = 0
+    const positions = []
+    for (let qi = 0; qi < q.length; qi++) {
+      const idx = t.indexOf(q[qi], ti)
+      if (idx === -1) return null
+      streak = idx === ti ? streak + 1 : 1
+      score += streak * 3
+      if (idx === 0 || /[\s\/._-]/.test(t[idx - 1])) score += 8
+      score -= (idx - ti)
+      positions.push(idx)
+      ti = idx + 1
+    }
+    return { score, positions }
+  }
+
+  function fuzzyMatch(query, text) {
+    const terms = query.trim().split(/\s+/).filter(Boolean)
+    if (!terms.length) return { score: 1, positions: [] }
+    let score = 0
+    const positions = []
+    for (const term of terms) {
+      const m = fuzzyScore(term, text)
+      if (!m) return null
+      score += m.score
+      positions.push(...m.positions)
+    }
+    return { score, positions: [...new Set(positions)].sort((a, b) => a - b) }
+  }
+
+  function frecBonus(it) {
+    if (it.kind === 'tab') return 30
+    return Math.min(24, 3 * Math.log2(1 + (it.frec || 0)))
+  }
+
+  function highlight(text, positions) {
+    if (!positions || positions.length === 0) return escapeHtml(text)
+    let out = '', last = 0
+    for (const p of positions) {
+      if (p >= text.length) break
+      out += escapeHtml(text.slice(last, p)) + '<b>' + escapeHtml(text[p]) + '</b>'
+      last = p + 1
+    }
+    return out + escapeHtml(text.slice(last))
+  }
+
+  function filter() {
+    const q = queryEl.value
+    const mode = state.mode
+    if (mode === 'tabs') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, `${it.tabLabel} ${it.title} ${it.url}`)
+          return m && { item: it, score: m.score }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+    } else if (mode === 'history' || mode === 'open') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, `${it.title} ${it.url}`)
+          if (!m) return null
+          const bonus = mode === 'open' || q ? frecBonus(it) : 0
+          return { item: it, score: m.score + bonus }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 200)
+    } else if (mode === 'downloads') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, `${it.name} ${it.url}`)
+          return m && { item: it, score: m.score }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 200)
+    } else if (mode === 'join') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, `${it.tag} ${it.label} ${it.url}`)
+          return m && { item: it, score: m.score }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+    } else if (mode === 'grep') {
+      const needle = q.toLowerCase()
+      const out = []
+      if (needle.length >= 2) {
+        for (const pane of state.items) {
+          for (const line of pane.lines) {
+            const idx = line.text.toLowerCase().indexOf(needle)
+            if (idx !== -1) {
+              out.push({ item: { paneId: pane.paneId, tabLabel: pane.tabLabel, title: pane.title, line }, idx })
+              if (out.length >= 300) break
+            }
+          }
+          if (out.length >= 300) break
+        }
+      }
+      state.filtered = out
+    } else if (mode === 'help') {
+      state.filtered = state.items
+        .filter((it) => !q || `${it.keys} ${it.desc}`.toLowerCase().includes(q.toLowerCase()))
+        .map((item) => ({ item }))
+    } else if (mode === 'bookmarks') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, `${it.tag} ${it.name} ${it.url}`)
+          return m && { item: it, score: m.score }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 200)
+    } else if (mode === 'import') {
+      state.filtered = state.items
+        .filter((it) => !q || it.label.toLowerCase().includes(q.toLowerCase()))
+        .map((item) => ({ item }))
+    } else if (mode === 'commands') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, it.title)
+          return m && { item: it, score: m.score }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+    } else if (mode === 'sessions') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, it.name)
+          return m && { item: it, score: m.score + (it.current ? 1 : 0) }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+    } else if (mode === 'tree') {
+      state.filtered = state.items
+        .map((it) => {
+          const m = fuzzyMatch(q, `${it.tag} ${it.label} ${it.url}`)
+          return m && { item: it, score: m.score }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.score - a.score)
+    } else {
+      state.filtered = []
+    }
+    state.selected = 0
+    state.userMoved = false
+    render()
+  }
+
+  function render() {
+    const mode = state.mode
+    modeEl.textContent = MODE_LABELS[mode] || '❯'
+    footerEl.innerHTML = FOOTERS[mode] || ''
+    resultsEl.innerHTML = ''
+    const q = queryEl.value
+    const rows = state.filtered.slice(0, 200)
+    rows.forEach((r, i) => {
+      const el = document.createElement('div')
+      el.className = 'row' + (i === state.selected ? ' selected' : '')
+      const it = r.item
+      if (mode === 'tabs') {
+        el.innerHTML = `${favImg(it.favicon)}<span class="tag">${escapeHtml(it.tabLabel)}</span><span class="main">${highlight(it.title, fuzzyMatch(q, it.title)?.positions)}</span><span class="sub">${escapeHtml(it.url)}</span>`
+      } else if (mode === 'grep') {
+        const text = it.line.text
+        const pre = escapeHtml(text.slice(0, r.idx))
+        const hit = escapeHtml(text.slice(r.idx, r.idx + q.length))
+        const post = escapeHtml(text.slice(r.idx + q.length))
+        el.innerHTML = `<span class="tag">${escapeHtml(it.tabLabel)}</span><span class="lineno">${it.line.n}</span><span class="main">${pre}<b>${hit}</b>${post}</span>`
+      } else if (mode === 'history' || mode === 'open') {
+        const kind = mode === 'open' && it.kind ? `<span class="tag" style="min-width:38px">${escapeHtml(it.kind)}</span>` : ''
+        el.innerHTML = `${kind}<span class="main">${highlight(it.title, fuzzyMatch(q, it.title)?.positions)}</span><span class="sub">${highlight(it.url, fuzzyMatch(q, it.url)?.positions)}</span>`
+      } else if (mode === 'downloads') {
+        el.innerHTML = `<span class="tag" style="min-width:74px">${escapeHtml(it.state === 'completed' ? '' : it.state)}</span><span class="main">${highlight(it.name, fuzzyMatch(q, it.name)?.positions)}</span><span class="sub">${escapeHtml(it.file || it.url)}</span>`
+      } else if (mode === 'join') {
+        el.innerHTML = `<span class="tag">${escapeHtml(it.tag)}</span><span class="main">${highlight(it.label, fuzzyMatch(q, it.label)?.positions)}</span><span class="sub">${it.panes > 1 ? it.panes + ' panes · ' : ''}${escapeHtml(it.url)}</span>`
+      } else if (mode === 'help') {
+        el.innerHTML = `<span class="tag">${escapeHtml(it.keys)}</span><span class="main">${escapeHtml(it.desc)}</span>`
+      } else if (mode === 'bookmarks') {
+        el.innerHTML = `<span class="tag">${escapeHtml(it.tag || '')}</span><span class="main">${highlight(it.name, fuzzyMatch(q, it.name)?.positions)}</span><span class="sub">${escapeHtml(it.url)}</span>`
+      } else if (mode === 'import') {
+        el.innerHTML = `<span class="main">${escapeHtml(it.label)}</span><span class="sub">${escapeHtml(it.path || '')}</span>`
+      } else if (mode === 'commands') {
+        el.innerHTML = `<span class="main">${highlight(it.title, fuzzyMatch(q, it.title)?.positions)}</span><span class="sub">${escapeHtml(it.keys || '')}</span>`
+      } else if (mode === 'sessions') {
+        el.innerHTML = `<span class="tag">${it.current ? '*' : ''}</span><span class="main">${highlight(it.name, fuzzyMatch(q, it.name)?.positions)}</span><span class="sub">${it.tabCount} tab${it.tabCount === 1 ? '' : 's'}</span>`
+      } else if (mode === 'tree') {
+        el.innerHTML = `${favImg(it.favicon)}<span class="tag">${escapeHtml(it.tag)}${it.current ? '*' : ''}</span><span class="main">${highlight(it.label, fuzzyMatch(q, it.label)?.positions)}</span><span class="sub">${it.panes > 1 ? it.panes + ' panes · ' : ''}${escapeHtml(it.url)}</span>`
+      }
+      el.addEventListener('click', () => { state.selected = i; state.userMoved = true; accept(false) })
+      resultsEl.appendChild(el)
+    })
+    if (state.notice) {
+      countEl.textContent = state.notice
+    } else if (mode === 'grep' && state.loading) {
+      countEl.textContent = 'scanning…'
+    } else if (mode === 'find') {
+      countEl.textContent = state.findCount || ''
+    } else if (mode === 'input') {
+      countEl.textContent = ''
+    } else {
+      countEl.textContent = `${state.filtered.length}`
+    }
+    const sel = resultsEl.children[state.selected]
+    if (sel) sel.scrollIntoView({ block: 'nearest' })
+  }
+
+  function move(delta) {
+    if (state.filtered.length === 0) return
+    const prev = resultsEl.children[state.selected]
+    state.selected = (state.selected + delta + state.filtered.length) % state.filtered.length
+    state.userMoved = true
+    const next = resultsEl.children[state.selected]
+    if (prev && next) {
+      prev.classList.remove('selected')
+      next.classList.add('selected')
+      next.scrollIntoView({ block: 'nearest' })
+    } else {
+      render()
+    }
+  }
+
+  function accept(newTabModifier) {
+    const mode = state.mode
+    const sel = state.filtered[state.selected]
+    if (mode === 'find') {
+      window.bmux.send('find:nav', { text: queryEl.value, forward: !newTabModifier })
+      return
+    }
+    if (mode === 'help') { close(); return }
+    if (mode === 'input') {
+      window.bmux.send('overlay:action', { mode, tag: state.tag, query: queryEl.value })
+      return
+    }
+    if (mode === 'open') {
+      window.bmux.send('overlay:action', {
+        mode,
+        item: state.userMoved && sel ? sel.item : null,
+        query: queryEl.value,
+        newTab: state.newTab || newTabModifier,
+        private: state.private,
+      })
+      return
+    }
+    if (mode === 'sessions') {
+      window.bmux.send('overlay:action', { mode, item: sel ? sel.item : null, query: queryEl.value })
+      return
+    }
+    if (!sel) return
+    window.bmux.send('overlay:action', {
+      mode,
+      item: mode === 'grep' ? sel.item : sel.item,
+      query: queryEl.value,
+      newTab: newTabModifier,
+    })
+  }
+
+  function close() {
+    window.bmux.send('overlay:close')
+  }
+
+  let resizeRaf = null
+
+  document.addEventListener('mousemove', (e) => {
+    if (!document.body.classList.contains('glass')) return
+    if (resizeRaf) return
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = null
+      window.bmux.send('resize:move', { x: e.clientX, y: e.clientY })
+    })
+  })
+  document.addEventListener('mouseup', () => {
+    if (!document.body.classList.contains('glass')) return
+    document.body.className = ''
+    window.bmux.send('resize:end', {})
+  })
+
+  window.bmux.on('overlay:init', (payload) => {
+    if (payload.mode === 'resize') {
+      document.body.className = `glass axis-${payload.axis}`
+      return
+    }
+    if (payload.mode === 'panes') {
+      document.body.className = 'panes'
+      panesEl.innerHTML = ''
+      state = { mode: 'panes', items: payload.items || [], filtered: [], selected: 0 }
+      for (const it of state.items) {
+        const el = document.createElement('div')
+        el.className = 'pane-num' + (it.active ? ' active' : '')
+        el.style.left = it.x + 'px'
+        el.style.top = it.y + 'px'
+        el.style.width = it.width + 'px'
+        el.style.height = it.height + 'px'
+        el.innerHTML = `<span class="badge">${it.n}</span>`
+        panesEl.appendChild(el)
+      }
+      return
+    }
+    document.body.className = ''
+    panesEl.innerHTML = ''
+    state = {
+      mode: payload.mode,
+      items: payload.items || [],
+      filtered: [],
+      selected: 0,
+      newTab: !!payload.newTab,
+      private: !!payload.private,
+      tag: payload.tag || null,
+      loading: payload.mode === 'grep',
+      findCount: '',
+      notice: payload.notice || '',
+    }
+    queryEl.value = payload.value || ''
+    modeEl.textContent = payload.label ? payload.label + ' ❯' : (MODE_LABELS[payload.mode] || '❯')
+    queryEl.focus()
+    queryEl.select()
+    filter()
+  })
+
+  window.bmux.on('overlay:data', ({ items }) => {
+    state.items = items
+    state.loading = false
+    filter()
+  })
+
+  window.bmux.on('find:result', ({ matches, active }) => {
+    state.findCount = matches ? `${active}/${matches}` : 'no matches'
+    countEl.textContent = state.findCount
+  })
+
+  queryEl.addEventListener('input', () => {
+    state.notice = ''
+    if (state.mode === 'find') {
+      window.bmux.send('find:query', { text: queryEl.value })
+      state.findCount = ''
+      render()
+      return
+    }
+    filter()
+  })
+
+  document.addEventListener('keydown', (e) => {
+    if (document.body.classList.contains('glass')) {
+      if (e.key === 'Escape') {
+        document.body.className = ''
+        window.bmux.send('resize:end', {})
+      }
+      return
+    }
+    if (state.mode === 'panes') {
+      if (['Control', 'Shift', 'Alt', 'Meta'].includes(e.key)) return
+      e.preventDefault()
+      const it = state.items.find((x) => String(x.n) === e.key)
+      if (it) window.bmux.send('overlay:action', { mode: 'panes', item: it })
+      else close()
+      return
+    }
+    if (e.key === 'Escape') { e.preventDefault(); close(); return }
+    if (e.key === 'Enter') { e.preventDefault(); accept(e.metaKey || e.ctrlKey || e.shiftKey); return }
+    if ((e.ctrlKey && (e.key === 'j' || e.key === 'n')) || e.key === 'ArrowDown') { e.preventDefault(); move(1); return }
+    if ((e.ctrlKey && (e.key === 'k' || e.key === 'p')) || e.key === 'ArrowUp') { e.preventDefault(); move(-1); return }
+    if (e.ctrlKey && e.key === 'u') { e.preventDefault(); queryEl.value = ''; queryEl.dispatchEvent(new Event('input')); return }
+    if (state.mode === 'bookmarks' && e.ctrlKey && e.key === 'x') {
+      e.preventDefault()
+      const sel = state.filtered[state.selected]
+      if (!sel) return
+      window.bmux.send('bookmarks:delete', { url: sel.item.url })
+      state.items = state.items.filter((it) => it.url !== sel.item.url)
+      const keep = Math.min(state.selected, Math.max(0, state.filtered.length - 2))
+      filter()
+      state.selected = Math.min(keep, Math.max(0, state.filtered.length - 1))
+      render()
+      return
+    }
+    if (state.mode === 'bookmarks' && e.ctrlKey && e.key === 'i') {
+      e.preventDefault()
+      window.bmux.send('overlay:action', { mode: 'bookmarks', import: true })
+      return
+    }
+    if (state.mode === 'sessions' && e.ctrlKey && e.key === 'x') {
+      e.preventDefault()
+      const sel = state.filtered[state.selected]
+      if (!sel || sel.item.current) return
+      window.bmux.send('session:delete', { name: sel.item.name })
+      state.items = state.items.filter((it) => it.name !== sel.item.name)
+      filter()
+      return
+    }
+  })
+</script>
+</body>
+</html>

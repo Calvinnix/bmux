@@ -1,0 +1,103 @@
+name: electron-update
+
+# Weekly: bump Electron to the latest release (which carries Chromium security
+# fixes), gate it on the e2e suite, then build a signed + notarized macOS build
+# and publish it to GitHub Releases so the app's electron-updater can pull it.
+#
+# Required repository secrets:
+#   MAC_CERT_P12_BASE64   base64 of your "Developer ID Application" .p12
+#   MAC_CERT_PASSWORD     password for that .p12
+#   APPLE_API_KEY_BASE64  base64 of your App Store Connect API key (.p8)
+#   APPLE_API_KEY_ID      the key's ID
+#   APPLE_API_ISSUER      the key's issuer UUID
+# (GITHUB_TOKEN is provided automatically for publishing the Release.)
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Build even if Electron is already the latest version'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+  issues: write
+
+jobs:
+  bump-and-release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - run: npm ci
+
+      - name: Compare Electron versions
+        id: ver
+        run: |
+          current=$(node -p "require('electron/package.json').version")
+          latest=$(npm view electron version)
+          echo "current=$current" >> "$GITHUB_OUTPUT"
+          echo "latest=$latest" >> "$GITHUB_OUTPUT"
+          if [ "$current" != "$latest" ] || [ "${{ github.event.inputs.force }}" = "true" ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "Electron $current is already the latest; nothing to do."
+          fi
+
+      - name: Bump Electron
+        if: steps.ver.outputs.changed == 'true'
+        run: npm install --save-dev electron@latest
+
+      - name: Run e2e suite (the release gate)
+        if: steps.ver.outputs.changed == 'true'
+        run: npm test
+
+      - name: Bump app version
+        if: steps.ver.outputs.changed == 'true'
+        id: appver
+        run: echo "version=$(npm version patch --no-git-tag-version)" >> "$GITHUB_OUTPUT"
+
+      - name: Commit bump
+        if: steps.ver.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: electron ${{ steps.ver.outputs.current }} -> ${{ steps.ver.outputs.latest }} (${{ steps.appver.outputs.version }})"
+          git push
+
+      - name: Stage notarization key
+        if: steps.ver.outputs.changed == 'true'
+        run: |
+          echo "${{ secrets.APPLE_API_KEY_BASE64 }}" | base64 --decode > "$RUNNER_TEMP/AuthKey.p8"
+          echo "APPLE_API_KEY=$RUNNER_TEMP/AuthKey.p8" >> "$GITHUB_ENV"
+
+      - name: Build, sign, notarize, publish
+        if: steps.ver.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_LINK: ${{ secrets.MAC_CERT_P12_BASE64 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: npm run release
+
+      - name: Report failure
+        if: failure() && steps.ver.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `Electron auto-update to ${{ steps.ver.outputs.latest }} failed`,
+              body: `The weekly Electron bump to ${{ steps.ver.outputs.latest }} failed — tests or the signed build did not pass. Run: https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            })

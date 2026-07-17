@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #16161e;
+    --fg: #a9b1d6;
+    --dim: #4e5579;
+    --faint: #33395c;
+    --accent: #7aa2f7;
+    --border-inactive: #232637;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    overflow: hidden;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 11.5px;
+    -webkit-user-select: none;
+    cursor: default;
+  }
+  #borders { position: absolute; inset: 0; }
+  .pane-border {
+    position: absolute;
+    border: 1px solid var(--border-inactive);
+    border-radius: 10px;
+  }
+  .pane-border.active { border-color: var(--accent); }
+  .divider { position: absolute; -webkit-app-region: no-drag; }
+  .divider.row { cursor: col-resize; }
+  .divider.col { cursor: row-resize; }
+  #statusbar {
+    position: absolute;
+    left: 0; right: 0; top: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 12px 0 86px;
+    gap: 10px;
+    white-space: nowrap;
+    color: var(--dim);
+    -webkit-app-region: drag;
+  }
+  #session { color: var(--faint); }
+  #tabs { display: flex; gap: 2px; overflow: hidden; flex-shrink: 1; }
+  .tab {
+    color: var(--dim);
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+  }
+  .tab:hover { background: #1d2030; }
+  .tab.active { color: var(--accent); }
+  .tab .fav { width: 13px; height: 13px; object-fit: contain; flex-shrink: 0; }
+  .tab .x {
+    color: var(--faint);
+    visibility: hidden;
+    padding: 0 1px;
+  }
+  .tab:hover .x { visibility: visible; }
+  .tab .x:hover { color: var(--fg); }
+  #newtab {
+    color: var(--faint);
+    padding: 2px 8px;
+    border-radius: 4px;
+    -webkit-app-region: no-drag;
+  }
+  #newtab:hover { background: #1d2030; color: var(--fg); }
+  #spacer { flex: 1; }
+  #blocked { color: var(--faint); display: none; }
+  #blocked.on { display: block; }
+  #loading {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    display: none;
+    animation: pulse 1s ease-in-out infinite;
+  }
+  #loading.on { display: block; }
+  @keyframes pulse { 50% { opacity: 0.25; } }
+  #url {
+    color: var(--dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 42%;
+    padding: 2px 8px;
+    border-radius: 4px;
+    -webkit-app-region: no-drag;
+  }
+  #url:hover { background: #1d2030; color: var(--fg); }
+  #url.placeholder { color: var(--faint); }
+  #mode {
+    color: var(--bg);
+    background: var(--accent);
+    font-weight: 700;
+    padding: 1px 7px;
+    border-radius: 3px;
+    display: none;
+  }
+  #mode.on { display: block; }
+</style>
+</head>
+<body>
+  <div id="borders"></div>
+  <div id="statusbar">
+    <span id="session">bmux</span>
+    <div id="tabs"></div>
+    <span id="newtab" title="new tab">+</span>
+    <div id="spacer"></div>
+    <span id="blocked"></span>
+    <span id="loading"></span>
+    <span id="url"></span>
+    <span id="mode"></span>
+  </div>
+<script>
+  const bordersEl = document.getElementById('borders')
+  const tabsEl = document.getElementById('tabs')
+  const urlEl = document.getElementById('url')
+  const modeEl = document.getElementById('mode')
+  const loadingEl = document.getElementById('loading')
+  const blockedEl = document.getElementById('blocked')
+  const statusbarEl = document.getElementById('statusbar')
+
+  const applyTheme = (t) => {
+    for (const [k, v] of Object.entries(t || {})) document.documentElement.style.setProperty('--' + k, v)
+  }
+  window.bmux.invoke('theme:get').then(applyTheme)
+  window.bmux.on('theme:update', applyTheme)
+
+  document.getElementById('newtab').addEventListener('click', () => window.bmux.send('chrome:new-tab', {}))
+  urlEl.addEventListener('click', () => window.bmux.send('chrome:open-url', {}))
+
+  window.bmux.on('status', (s) => {
+    statusbarEl.style.height = s.statusBarHeight + 'px'
+    document.body.style.fontSize = s.fontSize + 'px'
+    document.getElementById('session').textContent = s.session
+    tabsEl.innerHTML = ''
+    s.tabs.forEach((t, i) => {
+      const el = document.createElement('span')
+      el.className = 'tab' + (t.active ? ' active' : '')
+      if (t.favicon) {
+        const img = document.createElement('img')
+        img.className = 'fav'
+        img.src = t.favicon
+        img.onerror = () => img.remove()
+        el.appendChild(img)
+      }
+      const label = document.createElement('span')
+      label.textContent = t.label
+      el.appendChild(label)
+      el.addEventListener('click', () => window.bmux.send('chrome:select-tab', { index: i }))
+      const x = document.createElement('span')
+      x.className = 'x'
+      x.textContent = '×'
+      x.addEventListener('click', (e) => {
+        e.stopPropagation()
+        window.bmux.send('chrome:close-tab', { index: i })
+      })
+      el.appendChild(x)
+      tabsEl.appendChild(el)
+    })
+    const shownUrl = s.message || s.url.replace(/^bmux:\/\/start\/?$/, '').replace(/^https:\/\//, '')
+    if (shownUrl) {
+      urlEl.textContent = shownUrl
+      urlEl.classList.remove('placeholder')
+      urlEl.style.color = s.message ? 'var(--accent)' : ''
+    } else {
+      urlEl.textContent = '⌘L search or enter address'
+      urlEl.classList.add('placeholder')
+      urlEl.style.color = ''
+    }
+    modeEl.textContent = s.hinting ? 'HINT'
+      : s.visual ? 'VISUAL'
+      : s.scrolling ? 'SCROLL'
+      : s.bar ? 'BAR'
+      : s.repeatPending ? 'REPEAT'
+      : 'PREFIX'
+    modeEl.className = s.prefixPending || s.hinting || s.scrolling || s.bar || s.repeatPending ? 'on' : ''
+    loadingEl.className = s.loading ? 'on' : ''
+    blockedEl.textContent = '⊘ ' + s.blocked
+    blockedEl.className = s.blocked > 0 ? 'on' : ''
+    bordersEl.innerHTML = ''
+    for (const b of s.borders) {
+      const el = document.createElement('div')
+      el.className = 'pane-border' + (b.active ? ' active' : '')
+      el.style.left = b.x + 'px'
+      el.style.top = b.y + 'px'
+      el.style.width = b.width + 'px'
+      el.style.height = b.height + 'px'
+      bordersEl.appendChild(el)
+    }
+    for (const d of s.dividers) {
+      const el = document.createElement('div')
+      el.className = 'divider ' + d.axis
+      if (d.axis === 'row') {
+        el.style.left = (d.x - 4) + 'px'
+        el.style.top = d.y + 'px'
+        el.style.width = '8px'
+        el.style.height = d.length + 'px'
+      } else {
+        el.style.left = d.x + 'px'
+        el.style.top = (d.y - 4) + 'px'
+        el.style.width = d.length + 'px'
+        el.style.height = '8px'
+      }
+      el.addEventListener('mousedown', (e) => {
+        e.preventDefault()
+        window.bmux.send('resize:start', { index: d.index })
+      })
+      bordersEl.appendChild(el)
+    }
+  })
+</script>
+</body>
+</html>

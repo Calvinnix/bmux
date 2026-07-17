@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>new tab</title>
+<style>
+  :root {
+    --bg: #16161e;
+    --fg: #a9b1d6;
+    --dim: #565f89;
+    --faint: #3b4261;
+    --accent: #7aa2f7;
+    --border: #262a40;
+    --input-bg: #1d2030;
+    --sel-bg: #1e2233;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: "SF Mono", Menlo, monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow-y: auto;
+    padding: 40px 0;
+  }
+  .art {
+    color: var(--fg);
+    font-size: clamp(10px, 1.7vw, 17px);
+    line-height: 1.02;
+  }
+  .art .artrow { display: block; white-space: nowrap; }
+  .art .artrow span { display: inline-block; width: 1ch; text-align: center; }
+  main { width: min(560px, 88vw); margin-top: 36px; }
+  #search {
+    width: 100%;
+    background: var(--input-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    color: var(--fg);
+    font: inherit;
+    font-size: 14px;
+    padding: 12px 15px;
+    outline: none;
+    margin-bottom: 22px;
+  }
+  #search:focus { border-color: var(--accent); }
+  #search::placeholder { color: var(--dim); }
+  .group-title {
+    color: var(--faint);
+    font-size: 10.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    margin: 16px 0 6px 12px;
+  }
+  .item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 7px 12px;
+    border-radius: 7px;
+    cursor: pointer;
+    border-left: 2px solid transparent;
+  }
+  .item.sel { background: var(--sel-bg); border-left-color: var(--accent); }
+  .item .ico { width: 16px; text-align: center; flex-shrink: 0; color: var(--dim); }
+  .item.sel .ico { color: var(--accent); }
+  .item .fav { width: 15px; height: 15px; object-fit: contain; flex-shrink: 0; }
+  .item .no-fav {
+    width: 16px; text-align: center; flex-shrink: 0; color: var(--faint);
+  }
+  .item .text { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .item .host { color: var(--faint); font-size: 11px; flex-shrink: 0; }
+  .item .hk {
+    color: var(--faint);
+    font-size: 12px;
+    flex-shrink: 0;
+    min-width: 16px;
+    text-align: right;
+  }
+  .item.sel .hk { color: var(--accent); }
+  footer {
+    width: min(560px, 88vw);
+    margin-top: 30px;
+    border-top: 1px solid var(--border);
+    padding-top: 16px;
+  }
+  .legend { color: var(--dim); font-size: 12px; line-height: 2.1; text-align: center; }
+  .legend kbd { color: var(--accent); }
+  .legend .sep { color: var(--faint); }
+  .modehint { color: var(--faint); font-size: 11px; text-align: center; margin-top: 12px; }
+  .modehint kbd { color: var(--dim); }
+</style>
+</head>
+<body>
+  <pre class="art">██████╗ ███╗   ███╗██╗   ██╗██╗  ██╗
+██╔══██╗████╗ ████║██║   ██║╚██╗██╔╝
+██████╔╝██╔████╔██║██║   ██║ ╚███╔╝
+██╔══██╗██║╚██╔╝██║██║   ██║ ██╔██╗
+██████╔╝██║ ╚═╝ ██║╚██████╔╝██╔╝ ██╗
+╚═════╝ ╚═╝     ╚═╝ ╚═════╝ ╚═╝  ╚═╝</pre>
+
+  <main>
+    <input id="search" type="text" placeholder="Search or enter address  —  press /" spellcheck="false" autocomplete="off">
+    <div id="menu"></div>
+  </main>
+
+  <footer>
+    <div class="legend">
+      <kbd>C-b o</kbd> open <span class="sep">·</span> <kbd>C-b %</kbd> split <span class="sep">·</span> <kbd>C-b f</kbd> tabs <span class="sep">·</span> <kbd>C-b g</kbd> grep <span class="sep">·</span> <kbd>C-b e</kbd> hints<br>
+      <kbd>C-b w</kbd> windows <span class="sep">·</span> <kbd>C-b s</kbd> sessions <span class="sep">·</span> <kbd>C-b :</kbd> commands <span class="sep">·</span> <kbd>C-b ?</kbd> all keys
+    </div>
+    <div class="modehint"><kbd>j</kbd>/<kbd>k</kbd> move <span>·</span> <kbd>↵</kbd> select <span>·</span> hotkey to jump <span>·</span> <kbd>/</kbd> address bar</div>
+  </footer>
+
+<script>
+  // Box-drawing/full-block glyphs render at inconsistent widths in the browser,
+  // which shears the art. Force every glyph into a fixed 1-char cell.
+  ;(() => {
+    const art = document.querySelector('.art')
+    const lines = art.textContent.replace(/\n+$/, '').split('\n')
+    art.textContent = ''
+    for (const line of lines) {
+      const row = document.createElement('div')
+      row.className = 'artrow'
+      for (const ch of line) {
+        const cell = document.createElement('span')
+        cell.textContent = ch
+        row.appendChild(cell)
+      }
+      art.appendChild(row)
+    }
+  })()
+
+  const data = window.__BMUX || { searchUrl: 'https://duckduckgo.com/?q=%s', topSites: [], bookmarks: [], recent: [] }
+  const bridge = window.bmuxStart || null
+
+  function clientNormalize(raw) {
+    const t = raw.trim()
+    if (!t) return null
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t) || t.startsWith('bmux:')) return t
+    if (t === 'localhost' || t.startsWith('localhost:')) return 'http://' + t
+    if (!t.includes(' ') && t.includes('.')) return 'https://' + t
+    return (data.searchUrl || 'https://duckduckgo.com/?q=%s').replace('%s', encodeURIComponent(t))
+  }
+  function openInput(raw) {
+    const t = (raw || '').trim()
+    if (!t) return
+    if (bridge) bridge.open(t)
+    else { const u = clientNormalize(t); if (u) window.location.href = u }
+  }
+  function openUrl(url) {
+    if (bridge) bridge.open(url)
+    else window.location.href = url
+  }
+  function act(id) { if (bridge) bridge.run(id) }
+  function hostOf(url) { try { return new URL(url).hostname.replace(/^www\./, '') } catch { return url } }
+
+  const search = document.getElementById('search')
+  let mode = 'normal'
+  search.addEventListener('focus', () => { mode = 'insert' })
+  search.addEventListener('blur', () => { mode = 'normal' })
+  search.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); openInput(search.value) }
+    else if (e.key === 'Escape') { e.preventDefault(); search.blur() }
+  })
+
+  // ----- build the navigable menu -----
+  const actions = [
+    { hk: 'o', ico: '⌕', label: 'Open URL or search', run: () => search.focus() },
+    { hk: 'f', ico: '', label: 'Find tab', run: () => act('find-tabs') },
+    { hk: 'u', ico: '', label: 'Recent history', run: () => act('find-history') },
+    { hk: 'b', ico: '', label: 'Bookmarks', run: () => act('find-bookmarks') },
+    { hk: 'g', ico: '', label: 'Grep open pages', run: () => act('find-grep') },
+    { hk: 's', ico: '', label: 'New split', run: () => act('pane-split-right') },
+    { hk: 'w', ico: '', label: 'Windows / sessions tree', run: () => act('find-tree') },
+    { hk: ':', ico: '', label: 'Command palette', run: () => act('find-commands') },
+    { hk: ',', ico: '', label: 'Settings', run: () => act('app-preferences') },
+  ]
+
+  const jump = []
+  const seen = new Set()
+  const add = (arr) => { for (const it of arr || []) { if (!it.url || seen.has(it.url)) continue; seen.add(it.url); jump.push(it) } }
+  add(data.recent); add(data.topSites); add(data.bookmarks)
+  const jumpItems = jump.slice(0, 9).map((it, i) => ({
+    hk: String(i + 1),
+    url: it.url,
+    favicon: it.favicon,
+    label: it.title || it.name || hostOf(it.url),
+    host: hostOf(it.url),
+    run: () => openUrl(it.url),
+  }))
+
+  const items = [...actions, ...jumpItems]
+  const hotkeys = {}
+  items.forEach((it, i) => { if (it.hk) hotkeys[it.hk] = i })
+  let sel = 0
+
+  const menu = document.getElementById('menu')
+
+  function favNode(it) {
+    if (it.favicon) {
+      const img = document.createElement('img')
+      img.className = 'fav'
+      img.src = it.favicon
+      img.onerror = () => { const s = document.createElement('span'); s.className = 'no-fav'; s.textContent = (it.host[0] || '?').toUpperCase(); img.replaceWith(s) }
+      return img
+    }
+    const s = document.createElement('span')
+    s.className = it.ico ? 'ico' : 'no-fav'
+    s.textContent = it.ico || (it.host ? (it.host[0] || '?').toUpperCase() : '›')
+    return s
+  }
+
+  function render() {
+    menu.innerHTML = ''
+    const groups = [['Actions', actions, 0], ['Jump back in', jumpItems, actions.length]]
+    for (const [title, list, offset] of groups) {
+      if (!list.length) continue
+      const gt = document.createElement('div')
+      gt.className = 'group-title'
+      gt.textContent = title
+      menu.appendChild(gt)
+      list.forEach((it, j) => {
+        const idx = offset + j
+        const row = document.createElement('div')
+        row.className = 'item' + (idx === sel ? ' sel' : '')
+        row.appendChild(favNode(it))
+        const text = document.createElement('span')
+        text.className = 'text'
+        text.textContent = it.label
+        row.appendChild(text)
+        if (it.host && it.label !== it.host) {
+          const h = document.createElement('span')
+          h.className = 'host'
+          h.textContent = it.host
+          row.appendChild(h)
+        }
+        const hk = document.createElement('span')
+        hk.className = 'hk'
+        hk.textContent = it.hk || ''
+        row.appendChild(hk)
+        row.addEventListener('click', () => { sel = idx; render(); it.run() })
+        row.addEventListener('mousemove', () => { if (sel !== idx) { sel = idx; render() } })
+        menu.appendChild(row)
+      })
+    }
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if (mode === 'insert') return
+    if (e.metaKey || e.ctrlKey || e.altKey) return
+    if (e.key === 'j' || e.key === 'ArrowDown') { e.preventDefault(); sel = (sel + 1) % items.length; render() }
+    else if (e.key === 'k' || e.key === 'ArrowUp') { e.preventDefault(); sel = (sel - 1 + items.length) % items.length; render() }
+    else if (e.key === 'G') { e.preventDefault(); sel = items.length - 1; render() }
+    else if (e.key === 'Enter') { e.preventDefault(); items[sel].run() }
+    else if (e.key === '/') { e.preventDefault(); search.focus() }
+    else if (hotkeys[e.key] != null) { e.preventDefault(); sel = hotkeys[e.key]; render(); items[sel].run() }
+  })
+
+  render()
+</script>
+</body>
+</html>

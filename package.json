@@ -1,0 +1,53 @@
+{
+  "name": "bmux",
+  "version": "0.1.0",
+  "description": "A keyboard-driven browser with tmux-style multiplexing and telescope-style finders",
+  "main": "src/main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/calvinnix/bmux.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/run.js",
+    "build": "electron-builder --mac --arm64",
+    "build:local": "electron-builder --mac --arm64 -c.mac.identity=null -c.mac.notarize=false",
+    "package:install": "npm run build:local && rm -rf /Applications/bmux.app && cp -R dist/mac-arm64/bmux.app /Applications/",
+    "release": "electron-builder --mac --arm64 --publish always"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^37.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "productName": "bmux",
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
+  "build": {
+    "appId": "dev.calvinnix.bmux",
+    "productName": "bmux",
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "notarize": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "calvinnix",
+      "repo": "bmux"
+    }
+  }
+}

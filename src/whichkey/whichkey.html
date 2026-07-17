@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #16161e;
+    --fg: #c0caf5;
+    --dim: #565f89;
+    --faint: #3b4261;
+    --accent: #7aa2f7;
+    --border: #262a40;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    height: 100%;
+    font-family: "SF Mono", Menlo, monospace;
+    font-size: 12px;
+    overflow: hidden;
+    -webkit-user-select: none;
+    background: transparent;
+  }
+  #panel {
+    position: absolute;
+    left: 0; right: 0; bottom: 0;
+    background: var(--bg);
+    border-top: 1px solid var(--border);
+    box-shadow: 0 -14px 40px rgba(0, 0, 0, 0.45);
+    padding: 12px 18px 14px;
+    max-height: 60vh;
+    overflow: hidden;
+  }
+  #head {
+    color: var(--dim);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+  }
+  #head b { color: var(--accent); font-weight: 700; }
+  #grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+    gap: 4px 22px;
+  }
+  .item { display: flex; align-items: baseline; gap: 9px; overflow: hidden; white-space: nowrap; }
+  .item .k {
+    color: var(--accent);
+    flex-shrink: 0;
+    min-width: 58px;
+    text-align: right;
+  }
+  .item .arrow { color: var(--faint); flex-shrink: 0; }
+  .item .d { color: var(--fg); overflow: hidden; text-overflow: ellipsis; }
+</style>
+</head>
+<body>
+  <div id="panel">
+    <div id="head"><b id="prefix"></b><span>which-key — press a key</span></div>
+    <div id="grid"></div>
+  </div>
+<script>
+  const applyTheme = (t) => {
+    for (const [k, v] of Object.entries(t || {})) document.documentElement.style.setProperty('--' + k, v)
+  }
+  window.bmux.invoke('theme:get').then(applyTheme)
+  window.bmux.on('theme:update', applyTheme)
+
+  const gridEl = document.getElementById('grid')
+  const prefixEl = document.getElementById('prefix')
+
+  window.bmux.on('whichkey', (payload) => {
+    prefixEl.textContent = payload.prefix || ''
+    gridEl.innerHTML = ''
+    for (const h of payload.hints || []) {
+      const item = document.createElement('div')
+      item.className = 'item'
+      const k = document.createElement('span')
+      k.className = 'k'
+      k.textContent = h.key
+      const arrow = document.createElement('span')
+      arrow.className = 'arrow'
+      arrow.textContent = '→'
+      const d = document.createElement('span')
+      d.className = 'd'
+      d.textContent = h.desc
+      item.append(k, arrow, d)
+      gridEl.appendChild(item)
+    }
+  })
+</script>
+</body>
+</html>
