@@ -294,8 +294,6 @@ function activeTab() {
   return tabs[activeTabIndex]
 }
 
-const pendingFocus = new Map()
-
 function setActivePane(tab, paneId) {
   if (tab.activePaneId === paneId) return
   tab.lastPaneId = tab.activePaneId
@@ -388,18 +386,15 @@ function wirePane(view, isPrivate) {
   })
   wc.on('did-start-loading', sendStatus)
   wc.on('did-stop-loading', sendStatus)
-  wc.on('focus', () => {
-    // acks of our own focusActivePane() calls can arrive after the active pane
-    // has moved on; acting on them would steal focus back (and clobber lastPaneId)
-    const pending = pendingFocus.get(id) || 0
-    if (pending > 0) {
-      pendingFocus.set(id, pending - 1)
-      return
-    }
-    const tab = tabOfPane(id)
-    if (tab && tab.activePaneId !== id) {
+  // click-to-focus rides on trusted input events, not wc 'focus' events — focus
+  // acks of programmatic focusActivePane() calls can arrive late (slow machines)
+  // and would steal the active pane back and clobber lastPaneId
+  wc.on('input-event', (_e, input) => {
+    if (input.type !== 'mouseDown') return
+    const tab = activeTab()
+    if (tab && tab.activePaneId !== id && leafIds(tab.root).includes(id)) {
       setActivePane(tab, id)
-      sendStatus()
+      focusActivePane()
     }
   })
   wc.on('found-in-page', (_e, result) => {
@@ -438,7 +433,6 @@ function createPopupPane(options, isPrivate) {
 
 function destroyPane(pane) {
   panes.delete(pane.id)
-  pendingFocus.delete(pane.id)
   win.contentView.removeChildView(pane.view)
   pane.view.webContents.close()
 }
@@ -448,7 +442,6 @@ function removeDeadPane(paneId) {
   const pane = panes.get(paneId)
   if (!pane) return
   panes.delete(paneId)
-  pendingFocus.delete(paneId)
   const tab = tabs.find((t) => leafIds(t.root).includes(paneId))
   if (tab) {
     try { win?.contentView.removeChildView(pane.view) } catch {}
@@ -862,11 +855,7 @@ function applyLayout() {
 
 function focusActivePane() {
   const pane = activePane()
-  if (pane) {
-    const wc = pane.view.webContents
-    if (!wc.isFocused()) pendingFocus.set(pane.id, (pendingFocus.get(pane.id) || 0) + 1)
-    wc.focus()
-  }
+  if (pane) pane.view.webContents.focus()
   sendStatus()
 }
 

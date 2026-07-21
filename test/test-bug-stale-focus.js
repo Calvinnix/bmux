@@ -7,9 +7,6 @@ const cmd = (key, extra = {}) =>
 async function main() {
   const app = await launch()
   try {
-    await app.settle(300)
-    await app.evalMain(`Object.getPrototypeOf(activePane().view.webContents).focus = function () {}; 0`)
-
     await app.evalMain(`splitActive('row'); 0`)
     await waitFor(app, async () => (await app.state()).tabs[0].panes.length === 2, 'split')
     const ids = await app.evalMain('leafIds(activeTab().root)')
@@ -19,6 +16,7 @@ async function main() {
     assert.equal(await app.evalMain('activeTab().activePaneId'), ids[0], 'focus left')
 
     await app.evalMain(`panes.get(${JSON.stringify(ids[1])}).view.webContents.emit('focus'); 0`)
+    await app.settle(200)
     assert.equal(
       await app.evalMain('activeTab().activePaneId'), ids[0],
       'a stale focus ack from an earlier programmatic focus must not steal the active pane'
@@ -26,6 +24,14 @@ async function main() {
 
     await app.evalMain(`runPrefixCommand(${cmd(';')}); 0`)
     assert.equal(await app.evalMain('activeTab().activePaneId'), ids[1], 'prefix ; still returns to last pane')
+
+    await app.evalMain(`
+      const wc = panes.get(${JSON.stringify(ids[0])}).view.webContents
+      wc.sendInputEvent({ type: 'mouseDown', x: 20, y: 20, button: 'left', clickCount: 1 })
+      wc.sendInputEvent({ type: 'mouseUp', x: 20, y: 20, button: 'left', clickCount: 1 })
+      0`)
+    await waitFor(app, async () =>
+      (await app.evalMain('activeTab().activePaneId')) === ids[0], 'clicking a pane still activates it')
   } finally {
     await app.close()
   }
