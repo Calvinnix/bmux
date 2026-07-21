@@ -11,7 +11,7 @@ async function launch({ userData } = {}) {
   const electronBinary = require(path.join(__dirname, '..', 'node_modules', 'electron'))
   const proc = spawn(electronBinary, ['.'], {
     cwd: path.join(__dirname, '..'),
-    env: { ...process.env, BMUX_DEBUG: '1', BMUX_DEBUG_PORT: String(port), BMUX_USER_DATA: dir },
+    env: { BMUX_ADBLOCK: 'local', ...process.env, BMUX_DEBUG: '1', BMUX_DEBUG_PORT: String(port), BMUX_USER_DATA: dir },
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,
   })

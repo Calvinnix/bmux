@@ -5,6 +5,7 @@ const { pathToFileURL } = require('url')
 const hints = require('./hints')
 const bookmarkSources = require('./bookmarks')
 const updater = require('./updater')
+const { initBlocking, applyEngine } = require('./blocking')
 
 if (process.env.BMUX_USER_DATA) app.setPath('userData', process.env.BMUX_USER_DATA)
 
@@ -101,6 +102,7 @@ let barMode = false
 let hintMode = null
 let displayPanesTimer = null
 let blockedCount = 0
+let adblockReady = false
 let statusTimer = null
 let statusMsg = null
 let statusMsgTimer = null
@@ -1871,6 +1873,7 @@ async function runCommand(id) {
     case 'privacy-toggle-blocking':
       config.blockTrackers = config.blockTrackers === false
       try { fs.writeFileSync(userDataFile('config.json'), JSON.stringify(config, null, 2)) } catch {}
+      applyBlocklist()
       setStatusMessage(`tracker blocking ${config.blockTrackers ? 'on' : 'off'}`)
       break
     case 'privacy-clear-history':
@@ -2360,9 +2363,11 @@ function applyAppearance() {
 }
 
 function applyBlocklist() {
+  const sessions = ['persist:main', 'bmux-private'].map((p) => session.fromPartition(p))
+  if (applyEngine(sessions, config, app.getPath('userData'))) return
   const urls = TRACKER_DOMAINS.concat(config.blockExtra || []).flatMap((d) => [`*://${d}/*`, `*://*.${d}/*`])
-  for (const partition of ['persist:main', 'bmux-private']) {
-    session.fromPartition(partition).webRequest.onBeforeRequest({ urls }, (_details, callback) => {
+  for (const ses of sessions) {
+    ses.webRequest.onBeforeRequest({ urls }, (_details, callback) => {
       if (config.blockTrackers === false) return callback({})
       blockedCount++
       sendStatusSoon()
@@ -2403,6 +2408,15 @@ function hardenSession() {
     })
   }
   applyBlocklist()
+  initBlocking(app.getPath('userData'), () => {
+    blockedCount++
+    sendStatusSoon()
+  }).then(() => {
+    applyBlocklist()
+    adblockReady = true
+  }).catch(() => {
+    setStatusMessage('filter lists unavailable — using builtin blocklist')
+  })
 }
 
 const CORE_COMMANDS = [
