@@ -1,6 +1,6 @@
 {
   "name": "bmux",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A keyboard-driven browser with tmux-style multiplexing and telescope-style finders",
   "main": "src/main.js",
   "repository": {
