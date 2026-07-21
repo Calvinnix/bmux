@@ -20,7 +20,11 @@ async function launch({ userData } = {}) {
 
   const base = `http://127.0.0.1:${port}`
   const post = async (pathname, body) => {
-    const res = await fetch(base + pathname, { method: 'POST', body: JSON.stringify(body || {}) })
+    const res = await fetch(base + pathname, {
+      method: 'POST',
+      body: JSON.stringify(body || {}),
+      signal: AbortSignal.timeout(15000),
+    })
     const text = await res.text()
     if (!res.ok) throw new Error(`${pathname} failed: ${text}`)
     return text && text[0] === '{' ? JSON.parse(text) : text
@@ -32,7 +36,7 @@ async function launch({ userData } = {}) {
     base,
     shot: (target = 'active') =>
       fetch(`${base}/shot?target=${target}`).then(async (r) => Buffer.from(await r.arrayBuffer())),
-    state: () => fetch(base + '/state').then((r) => r.json()),
+    state: () => fetch(base + '/state', { signal: AbortSignal.timeout(15000) }).then((r) => r.json()),
     key: (keyCode, modifiers = [], target = 'active') => post('/key', { keyCode, modifiers, target }),
     evalMain: (code) => post('/main', { code }).then((r) => r.result),
     evalIn: (target, code) => post('/eval', { target, code }).then((r) => r.result),

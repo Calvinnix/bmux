@@ -294,6 +294,8 @@ function activeTab() {
   return tabs[activeTabIndex]
 }
 
+const pendingFocus = new Map()
+
 function setActivePane(tab, paneId) {
   if (tab.activePaneId === paneId) return
   tab.lastPaneId = tab.activePaneId
@@ -387,6 +389,13 @@ function wirePane(view, isPrivate) {
   wc.on('did-start-loading', sendStatus)
   wc.on('did-stop-loading', sendStatus)
   wc.on('focus', () => {
+    // acks of our own focusActivePane() calls can arrive after the active pane
+    // has moved on; acting on them would steal focus back (and clobber lastPaneId)
+    const pending = pendingFocus.get(id) || 0
+    if (pending > 0) {
+      pendingFocus.set(id, pending - 1)
+      return
+    }
     const tab = tabOfPane(id)
     if (tab && tab.activePaneId !== id) {
       setActivePane(tab, id)
@@ -429,6 +438,7 @@ function createPopupPane(options, isPrivate) {
 
 function destroyPane(pane) {
   panes.delete(pane.id)
+  pendingFocus.delete(pane.id)
   win.contentView.removeChildView(pane.view)
   pane.view.webContents.close()
 }
@@ -438,6 +448,7 @@ function removeDeadPane(paneId) {
   const pane = panes.get(paneId)
   if (!pane) return
   panes.delete(paneId)
+  pendingFocus.delete(paneId)
   const tab = tabs.find((t) => leafIds(t.root).includes(paneId))
   if (tab) {
     try { win?.contentView.removeChildView(pane.view) } catch {}
@@ -851,7 +862,11 @@ function applyLayout() {
 
 function focusActivePane() {
   const pane = activePane()
-  if (pane) pane.view.webContents.focus()
+  if (pane) {
+    const wc = pane.view.webContents
+    if (!wc.isFocused()) pendingFocus.set(pane.id, (pendingFocus.get(pane.id) || 0) + 1)
+    wc.focus()
+  }
   sendStatus()
 }
 
