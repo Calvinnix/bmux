@@ -37,6 +37,9 @@ function checkNow() {
 
 function friendlyError(err) {
   const msg = String((err && err.message) || err)
+  if ((err && err.code === 'ERR_UPDATER_LATEST_VERSION_NOT_FOUND') || /unable to find latest version/i.test(msg)) {
+    return 'no published releases yet'
+  }
   if (/code signature|not signed|codesign/i.test(msg)) return 'unsigned build cannot auto-update'
   return msg.split('\n')[0].slice(0, 120)
 }
@@ -75,4 +78,4 @@ function start(notify) {
   setInterval(check, CHECK_INTERVAL_MS)
 }
 
-module.exports = { start, status, describe, installNow, checkNow }
+module.exports = { start, status, describe, installNow, checkNow, friendlyError }

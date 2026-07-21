@@ -13,6 +13,16 @@ async function main() {
     const ids = await app.evalMain('JSON.stringify(commandList().map((c) => c.id))')
     assert.ok(ids.includes('app-check-updates'), 'palette has app: check for updates')
 
+    const emptyFeed = await app.evalMain(
+      `updater.friendlyError(Object.assign(new Error('Unable to find latest version on GitHub (https://github.com/x/y/releases/latest), please ensure a production release exists: HttpError: 404'), { code: 'ERR_UPDATER_LATEST_VERSION_NOT_FOUND' }))`
+    )
+    assert.equal(emptyFeed, 'no published releases yet', 'empty release feed maps to a clear message')
+    assert.equal(
+      await app.evalMain(`updater.friendlyError(new Error('Could not get code signature for running application'))`),
+      'unsigned build cannot auto-update',
+      'signature errors map to a clear message'
+    )
+
     await app.evalMain(`runCommand('app-check-updates'); 0`)
     await waitFor(app, async () => {
       const msg = await app.evalMain('statusMsg')
