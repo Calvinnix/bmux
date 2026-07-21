@@ -1758,6 +1758,7 @@ function commandList() {
     { id: 'app-downloads', title: 'app: open downloads folder' },
     { id: 'app-config', title: 'app: edit config file' },
     { id: 'app-reload-config', title: 'app: reload config' },
+    { id: 'app-check-updates', title: 'app: check for updates' },
     { id: 'app-restart-update', title: 'app: restart to update' },
     { id: 'app-help', title: 'app: all keybindings', keys: 'C-b ?' },
     ...(config.actions || []).map((a, i) => ({ id: `action:${i}`, title: `action: ${a.name || 'unnamed'}` })),
@@ -1907,6 +1908,11 @@ async function runCommand(id) {
       setStatusMessage(`pages follow ${config.appearance} appearance`)
       break
     case 'app-help': openFinder('help'); break
+    case 'app-check-updates':
+      setStatusMessage('checking for updates…')
+      await updater.checkNow()
+      setStatusMessage(updater.describe())
+      break
     case 'app-restart-update':
       if (!updater.installNow()) setStatusMessage('no update ready to install')
       break
@@ -2507,7 +2513,17 @@ ipcMain.handle('prefs:load', () => ({
   config,
   commands: [...CORE_COMMANDS, ...commandList().map((c) => ({ id: c.id, title: c.title }))],
   blocked: blockedCount,
+  update: { ...updater.status(), text: updater.describe() },
 }))
+
+ipcMain.handle('prefs:check-updates', async () => {
+  await updater.checkNow()
+  return { ...updater.status(), text: updater.describe() }
+})
+
+ipcMain.on('prefs:install-update', () => {
+  if (!updater.installNow()) setStatusMessage('no update ready to install')
+})
 
 ipcMain.on('prefs:save', (_e, partial) => {
   config = { ...config, ...partial }

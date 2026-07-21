@@ -278,8 +278,12 @@ to block additional domains, and drop a `filters.txt` with adblock-syntax filter
 The installed app checks GitHub Releases on launch and every six hours, downloads new
 versions in the background, and flashes a status-bar message when one is ready — restart
 whenever you like, or run `app: restart to update` from the palette to apply it
-immediately. Updates are disabled when running from source or under `BMUX_DEBUG`.
-Publishing releases (CI, signing, notarization) is covered in [RELEASING.md](RELEASING.md).
+immediately. Settings (`⌘,`) shows the current version and updater state with a **check
+now** button (which becomes **restart to update** once a download is ready), and
+`app: check for updates` from the palette does the same with status-bar feedback —
+including why updates are off (running from source, unsigned build, check errors).
+Updates are disabled when running from source or under `BMUX_DEBUG`. Publishing releases
+(CI, signing, notarization) is covered in [RELEASING.md](RELEASING.md).
 
 ## Control server (dev)
 

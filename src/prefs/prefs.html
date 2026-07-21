@@ -241,6 +241,15 @@
       <div id="bindings"></div>
     </div>
   </section>
+
+  <section>
+    <div class="row">
+      <label class="name">Updates</label>
+      <button class="combo" id="update-check">check now</button>
+      <button class="combo" id="update-install">restart to update</button>
+      <span class="hint" id="update-status"></span>
+    </div>
+  </section>
   </div>
 
 <script>
@@ -395,6 +404,7 @@
     cfg.keybindings = cfg.keybindings || []
     commands = data.commands
     if (data.blocked > 0) $('blocked-count').textContent = `${data.blocked} blocked this session`
+    renderUpdate(data.update)
     render()
 
     $('homepage').addEventListener('input', () => { cfg.homepage = $('homepage').value.trim() || 'bmux://start'; save() })
@@ -428,7 +438,19 @@
       cfg.prefix = { key: c.key, control: c.control, alt: c.alt, shift: c.shift }
       render(); save()
     }))
+    $('update-check').addEventListener('click', () => {
+      $('update-status').textContent = 'checking…'
+      window.bmux.invoke('prefs:check-updates').then(renderUpdate)
+    })
+    $('update-install').addEventListener('click', () => window.bmux.send('prefs:install-update'))
   })
+
+  function renderUpdate(u) {
+    if (!u) return
+    $('update-status').textContent = `bmux ${u.version} — ${u.text}`
+    $('update-install').style.display = u.state === 'ready' ? '' : 'none'
+    $('update-check').style.display = u.state === 'ready' ? 'none' : ''
+  }
 </script>
 </body>
 </html>

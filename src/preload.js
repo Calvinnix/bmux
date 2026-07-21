@@ -1,8 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 const RECV = ['status', 'overlay:init', 'overlay:data', 'find:result', 'theme:update', 'whichkey']
-const INVOKE = ['prefs:load', 'theme:get']
-const SEND = ['prefs:save', 'prefs:close', 'overlay:close', 'overlay:action', 'find:query', 'find:nav', 'bookmarks:delete', 'session:delete', 'resize:start', 'resize:move', 'resize:end', 'resize:reset', 'chrome:select-tab', 'chrome:close-tab', 'chrome:new-tab', 'chrome:open-url']
+const INVOKE = ['prefs:load', 'theme:get', 'prefs:check-updates']
+const SEND = ['prefs:save', 'prefs:close', 'prefs:install-update', 'overlay:close', 'overlay:action', 'find:query', 'find:nav', 'bookmarks:delete', 'session:delete', 'resize:start', 'resize:move', 'resize:end', 'resize:reset', 'chrome:select-tab', 'chrome:close-tab', 'chrome:new-tab', 'chrome:open-url']
 
 contextBridge.exposeInMainWorld('bmux', {
   on(channel, cb) {
